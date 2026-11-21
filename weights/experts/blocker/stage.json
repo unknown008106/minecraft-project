@@ -1,0 +1,8 @@
+{
+  "mode": "drill",
+  "level": 0,
+  "strategy": "X1",
+  "from": "runs/block-drill/X1/checkpoints/v0001-step-030903552-drill-end",
+  "opponent": "zombie-minus",
+  "arrows": 10
+}
