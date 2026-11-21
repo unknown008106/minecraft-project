@@ -1,0 +1,50 @@
+{
+  "name": "wheat_farm_large",
+  "description": "The plains village large wheat farm: oak log border, two water channels, farmland rows beside them, wheat and 2 composters",
+  "source": "vanilla 1.21.11 plains_large_farm_1.nbt",
+  "size": [13, 2, 9],
+  "origin": [-1, 0, 4],
+  "facing": "west",
+  "palette": {
+    "L": {
+      "name": "oak_log",
+      "state": {
+        "axis": "y"
+      }
+    },
+    "D": "dirt",
+    "F": "farmland",
+    "W": "water",
+    "w": "wheat",
+    "C": "composter",
+    ".": "air"
+  },
+  "expand": {
+    "axis": "x",
+    "unit": [7, 12]
+  },
+  "layers": [
+    [
+      "LLLLLLLLLLLLL",
+      "LDFWFFLFFWFDL",
+      "LFFWFFLFFWFFL",
+      "LFFWFFLFFWFFL",
+      "LFFWFFLFFWFFL",
+      "LFFWFFLFFWFFL",
+      "LFFWFFLFFWFFL",
+      "LFFWFFLFFWFFL",
+      "LLLLLLLLLLLLL"
+    ],
+    [
+      ".............",
+      ".Cw.ww.ww.wC.",
+      ".ww.ww.ww.ww.",
+      ".ww.ww.ww.ww.",
+      ".ww.ww.ww.ww.",
+      ".ww.ww.ww.ww.",
+      ".ww.ww.ww.ww.",
+      ".ww.ww.ww.ww.",
+      "............."
+    ]
+  ]
+}

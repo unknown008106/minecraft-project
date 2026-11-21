@@ -1,0 +1,36 @@
+{
+  "name": "wall",
+  "description": "A 9 long cobblestone wall segment, 4 high, oak log posts at both ends and a cobblestone wall cap",
+  "source": "crew starter library",
+  "size": [9, 4, 1],
+  "origin": [4, 0, -1],
+  "facing": "north",
+  "palette": {
+    "C": "cobblestone",
+    "L": {
+      "name": "oak_log",
+      "state": {
+        "axis": "y"
+      }
+    },
+    "W": "cobblestone_wall"
+  },
+  "expand": {
+    "axis": "x",
+    "unit": [1, 8]
+  },
+  "layers": [
+    [
+      "CCCCCCCCC"
+    ],
+    [
+      "LCCCCCCCL"
+    ],
+    [
+      "LCCCCCCCL"
+    ],
+    [
+      "LWWWWWWWL"
+    ]
+  ]
+}

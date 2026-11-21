@@ -1,0 +1,101 @@
+{
+  "name": "small_hut",
+  "description": "A 5 by 5 oak hut: plank floor and walls, log corners, a door, a bed, 2 torches and a slab roof",
+  "source": "crew starter library",
+  "size": [5, 5, 5],
+  "origin": [2, 0, -1],
+  "facing": "north",
+  "palette": {
+    "P": "oak_planks",
+    "L": {
+      "name": "oak_log",
+      "state": {
+        "axis": "y"
+      }
+    },
+    "S": {
+      "name": "oak_slab",
+      "state": {
+        "type": "bottom"
+      }
+    },
+    "D": {
+      "name": "oak_door",
+      "state": {
+        "facing": "south",
+        "half": "lower"
+      }
+    },
+    "d": {
+      "name": "oak_door",
+      "state": {
+        "facing": "south",
+        "half": "upper"
+      }
+    },
+    "B": {
+      "name": "white_bed",
+      "state": {
+        "facing": "south",
+        "part": "foot"
+      }
+    },
+    "b": {
+      "name": "white_bed",
+      "state": {
+        "facing": "south",
+        "part": "head"
+      }
+    },
+    "t": {
+      "name": "wall_torch",
+      "state": {
+        "facing": "south"
+      }
+    },
+    "T": {
+      "name": "wall_torch",
+      "state": {
+        "facing": "north"
+      }
+    },
+    ".": "air"
+  },
+  "layers": [
+    [
+      "PPPPP",
+      "PPPPP",
+      "PPPPP",
+      "PPPPP",
+      "PPPPP"
+    ],
+    [
+      "LPDPL",
+      "P...P",
+      "PB..P",
+      "Pb..P",
+      "LPPPL"
+    ],
+    [
+      "LPdPL",
+      "Pt..P",
+      "P...P",
+      "P..TP",
+      "LPPPL"
+    ],
+    [
+      "LPPPL",
+      "P...P",
+      "P...P",
+      "P...P",
+      "LPPPL"
+    ],
+    [
+      "SSSSS",
+      "SSSSS",
+      "SSSSS",
+      "SSSSS",
+      "SSSSS"
+    ]
+  ]
+}

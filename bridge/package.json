@@ -1,0 +1,13 @@
+{
+  "name": "axe-pvp-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mineflayer bots driven by the Python trainer",
+  "main": "bridge.js",
+  "dependencies": {
+    "@nxg-org/mineflayer-custom-pvp": "^1.7.16",
+    "mineflayer": "4.39.0",
+    "mineflayer-pathfinder": "^2.4.5",
+    "mineflayer-pvp": "^1.3.2"
+  }
+}

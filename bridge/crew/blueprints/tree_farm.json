@@ -1,0 +1,47 @@
+{
+  "name": "tree_farm",
+  "description": "A 9 by 9 oak tree farm: 4 saplings 4 apart on cleared ground, torches around so nothing spawns",
+  "source": "crew starter library",
+  "size": [9, 2, 9],
+  "origin": [4, 0, -1],
+  "facing": "north",
+  "palette": {
+    "D": "dirt",
+    "S": {
+      "name": "oak_sapling",
+      "state": {
+        "stage": 0
+      }
+    },
+    "T": "torch",
+    ".": "air"
+  },
+  "expand": {
+    "axis": "x",
+    "unit": [5, 8]
+  },
+  "layers": [
+    [
+      "         ",
+      "         ",
+      "  D   D  ",
+      "         ",
+      "         ",
+      "         ",
+      "  D   D  ",
+      "         ",
+      "         "
+    ],
+    [
+      "....T....",
+      ".........",
+      "..S...S..",
+      ".........",
+      "T...T...T",
+      ".........",
+      "..S...S..",
+      ".........",
+      "....T...."
+    ]
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "name": "wheat_farm",
+  "description": "The plains village small wheat farm: oak log border, a water channel down the middle, farmland rows on each side, wheat and a composter",
+  "source": "vanilla 1.21.11 plains_small_farm_1.nbt",
+  "size": [7, 2, 9],
+  "origin": [-1, 0, 4],
+  "facing": "west",
+  "palette": {
+    "L": {
+      "name": "oak_log",
+      "state": {
+        "axis": "y"
+      }
+    },
+    "D": "dirt",
+    "F": "farmland",
+    "W": "water",
+    "w": "wheat",
+    "C": "composter",
+    ".": "air"
+  },
+  "expand": {
+    "axis": "x",
+    "unit": [1, 6]
+  },
+  "layers": [
+    [
+      "LLLLLLL",
+      "LFFWFFL",
+      "LFFWFFL",
+      "LFFWFFL",
+      "LFFWFFL",
+      "LFFWFFL",
+      "LFFWFFL",
+      "LFFWFDL",
+      "LLLLLLL"
+    ],
+    [
+      ".......",
+      ".ww.ww.",
+      ".ww.ww.",
+      ".ww.ww.",
+      ".ww.ww.",
+      ".ww.ww.",
+      ".ww.ww.",
+      ".ww.wC.",
+      "......."
+    ]
+  ]
+}

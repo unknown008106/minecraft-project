@@ -1,0 +1,47 @@
+{
+  "about": "The frozen bench world of the crew live tests (DEC-089). Paper makes it once from this seed in server-crew/bench/crewbench, livetest.js keeps a pristine copy in server-crew/bench-pristine and restores it before every test, so every run starts from the same blocks at the same spot. The spot is found once by livetest.js bench_setup (the first flat grass spot on a square spiral around the world spawn) and written here.",
+  "seed": 20261030,
+  "level_name": "crewbench",
+  "world_dir": "bench",
+  "spot": [
+    17,
+    88,
+    -198
+  ],
+  "spawn": [
+    0,
+    137,
+    0
+  ],
+  "found": "2026-10-31T17:10:00Z",
+  "look": "south",
+  "bench_job": "!Crew1 mine iron 8",
+  "bench_minutes": 15,
+  "bench_kit": [
+    [
+      "iron_pickaxe",
+      1
+    ],
+    [
+      "stone_pickaxe",
+      1
+    ],
+    [
+      "torch",
+      48
+    ],
+    [
+      "bread",
+      16
+    ],
+    [
+      "cobblestone",
+      32
+    ],
+    [
+      "water_bucket",
+      1
+    ]
+  ],
+  "spot_note": "BUG-119 (Oct 31): the first spot, the spawn at 0 137 0, sat on a spruce canopy in old growth taiga (the forest floor is podzol at Y 124), no flat grass lay within 160 blocks. 17 88 -198 is the nearest flat grass (plains, height spread 1), found by scanning every column of the pristine bench world. The old spot runs as CREW_SPOT=0,125,0 (the forest floor)."
+}

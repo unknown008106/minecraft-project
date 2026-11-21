@@ -1,0 +1,94 @@
+{
+  "name": "storage_room",
+  "description": "A 7 by 5 storage room: cobblestone floor, oak walls and door, 2 double chests on the back wall, 2 torches, slab roof",
+  "source": "crew starter library",
+  "size": [7, 5, 5],
+  "origin": [3, 0, -1],
+  "facing": "north",
+  "palette": {
+    "C": "cobblestone",
+    "P": "oak_planks",
+    "L": {
+      "name": "oak_log",
+      "state": {
+        "axis": "y"
+      }
+    },
+    "S": {
+      "name": "oak_slab",
+      "state": {
+        "type": "bottom"
+      }
+    },
+    "D": {
+      "name": "oak_door",
+      "state": {
+        "facing": "south",
+        "half": "lower"
+      }
+    },
+    "d": {
+      "name": "oak_door",
+      "state": {
+        "facing": "south",
+        "half": "upper"
+      }
+    },
+    "n": {
+      "name": "chest",
+      "state": {
+        "facing": "north"
+      }
+    },
+    "t": {
+      "name": "wall_torch",
+      "state": {
+        "facing": "south"
+      }
+    },
+    "T": {
+      "name": "wall_torch",
+      "state": {
+        "facing": "north"
+      }
+    },
+    ".": "air"
+  },
+  "layers": [
+    [
+      "CCCCCCC",
+      "CCCCCCC",
+      "CCCCCCC",
+      "CCCCCCC",
+      "CCCCCCC"
+    ],
+    [
+      "LPPDPPL",
+      "P.....P",
+      "P.....P",
+      "Pnn.nnP",
+      "LPPPPPL"
+    ],
+    [
+      "LPPdPPL",
+      "P.t...P",
+      "P.....P",
+      "P..T..P",
+      "LPPPPPL"
+    ],
+    [
+      "LPPPPPL",
+      "P.....P",
+      "P.....P",
+      "P.....P",
+      "LPPPPPL"
+    ],
+    [
+      "SSSSSSS",
+      "SSSSSSS",
+      "SSSSSSS",
+      "SSSSSSS",
+      "SSSSSSS"
+    ]
+  ]
+}
