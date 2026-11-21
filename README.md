@@ -1,4 +1,4 @@
-# codejam
+# Minecraft project
 
 Minecraft agents that play with you and against you.
 
