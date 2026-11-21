@@ -20,6 +20,7 @@ const { pathfinder, Movements } = require('mineflayer-pathfinder')
 const { Rcon } = require('../rcon')
 const { Vec3 } = require('vec3')
 const { parseChatLine, parseMessage, formatCommand, SOLO } = require('./commands')
+const { aOrAn } = require('./skills/crafter_plan')
 const bp = require('./skills/blueprint')
 const { withCrop } = require('./skills/farm')
 const { Designer } = require('./designer')
@@ -32,7 +33,7 @@ const { Translator } = require('./translator')
 
 const ROOT = path.join(__dirname, '..', '..')
 const CONFIG = require('./crew.config.json')
-const JOB_COMMANDS = new Set(['kill', 'mine', 'come', 'give', 'build', 'expand', 'explore', 'design'])
+const JOB_COMMANDS = new Set(['kill', 'mine', 'come', 'give', 'build', 'expand', 'explore', 'design', 'craft'])
 // one shot jobs: starting one ends the others (the farm keeps going underneath, follow comes back after)
 const ONE_SHOT = ['build', 'mine', 'explore']
 const CUSTOM_BLUEPRINTS = path.join(ROOT, 'server-crew', 'blueprints')
@@ -245,9 +246,7 @@ class Crew {
     ctx.ticks = 0
     bot.on('messagestr', text => {
       if (this.listener() !== bot) return
-      const line = parseChatLine(text)
-      if (!line || line.sender.toLowerCase() !== this.owner.toLowerCase()) return
-      this.onOwnerMessage(line.message).catch(err => log(`command failed: ${err.stack || err.message}`))
+      this.handleChat(bot, text).catch(err => log(`command failed: ${err.stack || err.message}`))
     })
     bot.on('death', () => {
       const p = ctx.lastPos || bot.entity.position
@@ -257,6 +256,19 @@ class Crew {
       ctx.pickaxes = null  // everything dropped, so do not report its pickaxe as broken
       bot.trail = []
     })
+  }
+
+  // One chat line as the server sends it ("<Live_Fonam> craft me a stone pickaxe"). Only the owner gives orders; a
+  // friend may ask the crafter for an item (it hands it to whoever asked), nothing else
+  async handleChat (bot, text) {
+    const line = parseChatLine(text)
+    if (!line || line.sender === bot.username) return
+    if (line.sender.toLowerCase() !== this.owner.toLowerCase()) {
+      if (!this.friends.has(line.sender) || this.names.some(n => n.toLowerCase() === line.sender.toLowerCase())) return
+      const p = parseMessage(line.message, this.names)
+      if (p?.type !== 'command' || p.command.name !== 'craft') return
+    }
+    await this.onOwnerMessage(line.message, line.sender)
   }
 
   // A pickaxe gone from the bag while the bot lives means it broke (the kit and !give never take pickaxes away)
@@ -438,9 +450,11 @@ class Crew {
     return names.map(n => this.ctxs.get(n)).filter(c => c?.alive)
   }
 
-  async onOwnerMessage (message) {
+  // sender: who said it (the owner, or a friend asking the crafter), the crafter hands the item to them
+  async onOwnerMessage (message, sender = this.owner) {
     const p = parseMessage(message, this.names)
     if (!p) return
+    if (p.type === 'command' && p.command.name === 'craft') p.command.args.requester = sender
     if (p.type === 'error') {
       this.say(this.listener(), p.error)
       return
@@ -452,7 +466,7 @@ class Crew {
         this.verbosity = this.verbosity === p.command.name ? 'normal' : p.command.name
       }
       this.pinHere(p.command)
-      if (SOLO.has(p.command.name) && p.targets === 'all') ctxs = [this.pickSolo(ctxs)]
+      if (SOLO.has(p.command.name) && p.targets === 'all') ctxs = [this.pickSolo(ctxs, p.command)]
       for (const ctx of ctxs) {
         ctx.seq++  // a typed command replaces any plan still queued
         this.execute(ctx, p.command)
@@ -475,9 +489,10 @@ class Crew {
     let solo = null
     for (const { targets, command } of r.parsed) {
       this.pinHere(command)
+      if (command.name === 'craft') command.args.requester = sender
       let ctxs = this.targetsOf(targets)
       if (SOLO.has(command.name) && targets === 'all' && ctxs.length) {
-        solo = solo || this.pickSolo(ctxs)
+        solo = solo || this.pickSolo(ctxs, command)
         ctxs = [solo]
       }
       for (const ctx of ctxs) {
@@ -509,7 +524,15 @@ class Crew {
   }
 
   // The bot that takes a one bot job: one with nothing to do, else the first
-  pickSolo (ctxs) {
+  pickSolo (ctxs, command = null) {
+    // a craft request goes to the bot already making that item for that player (so it is not made twice), then to
+    // one with a craft job (it queues there)
+    if (command?.name === 'craft') {
+      const a = command.args
+      const has = c => { const m = c.manager.get('craft'); return [m.job, ...m.queue].some(j => j && j.item === a.item && j.requester === (a.requester || this.owner)) }
+      const busy = ctxs.find(has) || ctxs.find(c => c.manager.get('craft').job)
+      if (busy) return busy
+    }
     return ctxs.find(c => ['idle', 'following you'].includes(c.manager.status())) || ctxs[0]
   }
 
@@ -596,6 +619,7 @@ class Crew {
         return null
       case 'give':
         return m.setOn('give', {})
+      case 'craft': return this.craft(ctx, a)
       case 'status':
         this.say(ctx.bot, this.statusLine(ctx))
         return null
@@ -632,6 +656,20 @@ class Crew {
     return 'done'
   }
 
+  // A craft request to the crafter role (CraftMode in behaviors.js). Says what happens, returns the job's promise
+  craft (ctx, a) {
+    const mode = ctx.manager.get('craft')
+    const requester = a.requester || this.owner
+    const label = a.item.replace(/_/g, ' ')
+    const r = mode.request({ item: a.item, requester })
+    if (r === 'started') this.say(ctx.bot, `Crafting ${aOrAn(label)} for ${requester}`)
+    else if (r === 'queued') this.say(ctx.bot, `I'll craft the ${label} for ${requester} after ${mode.describe().replace(/^\w+ /, 'the ')}`)
+    else if (r === 'duplicate') this.say(ctx.bot, `I'm already on your ${label}, ${requester}`)
+    else if (r === 'ready') this.say(ctx.bot, `Your ${label} is ready, ${requester}, bringing it`)
+    const job = [mode.job, ...mode.queue].find(j => j && j.item === a.item && j.requester === requester)
+    return job ? job.done : null
+  }
+
   statusLine (ctx) {
     const b = ctx.bot
     const p = b.entity.position
@@ -641,7 +679,7 @@ class Crew {
   }
 
   acknowledge (ctxs, command) {
-    if (command.name === 'status' || command.name === 'blueprints') return
+    if (command.name === 'status' || command.name === 'blueprints' || command.name === 'craft') return  // craft speaks for itself
     const who = ctxs.length === this.names.length && ctxs.length > 1 ? 'Crew' : ctxs.map(c => c.bot.username).join(', ')
     const a = command.args
     const text = {

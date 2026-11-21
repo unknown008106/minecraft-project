@@ -44,6 +44,7 @@ Only Live_Fonam's chat counts. Commands start with "!" because "/" is the server
 !explore [radius]         scout around (default 64), report finds with coordinates, then come back
 !design <name> <words>    have Claude Sonnet draw a new blueprint from your words (the translator does this for you)
 !blueprints               list what it can build
+!craft <item>             craft a wooden, stone, iron or diamond pickaxe, a furnace or a crafting table and hand it to you
 ```
 
 Examples: `!Crew1 mine iron 10`, `!kill 30`, `!kill 20 Steve`, `!Crew2 come`, `!all stop`, `!build small_hut here`, `!build wall 120 64 -40 east`, `!farm wheat here`, `!expand wheat_farm`, `!explore 96`.
@@ -55,6 +56,31 @@ Ore names work as you would say them: diamond, iron, coal, gold, copper, redston
 ## Plain words
 
 A line that starts with "@crew", or with a bot name and no "!", goes to the translator: Claude Haiku 5.5 (the cheapest model) turns it into the commands above, and the bots say what they will run. For example "@crew go get me some diamonds and then come back" becomes `!mine diamond 5` then `!come`, and "@crew build me a small house here" becomes `!build small_hut here`. The translator knows the blueprint list. For something the list does not have ("@crew build me a watchtower here") it sends `!design watchtower ...` then `!build watchtower here`, and the bots draw the blueprint first (see New blueprints below). A bot runs a plan in order and waits for each job to end. Every command it gets back goes through the same parser as typed ones, so it can only ever run these commands. A request the commands cannot do gets a short "Can't do that". The key comes from `~/.config/anthropic/api.env` (with the workspace ID sent on every request). Without it the translator is off and says so. A reply takes several seconds.
+
+## The crafter
+
+Type `craft me a stone pickaxe` or `craft a furnace` in chat (no "!" needed, no translator, works without an API key; `!craft stone pickaxe`, `@crew craft ...` and `Crew1, craft ...` work too). It knows the wooden, stone, iron and diamond pickaxe, the furnace and the crafting table, and common names: wood pickaxe, cobblestone pickaxe, cobble pick, workbench. Friends in `crew.config.json` may ask too, and the item goes to whoever asked.
+
+What it does, all with survival actions:
+
+1. Remembers who asked and what, reads its real bag (as the server has it) and plans from Mojang's own 1.21.11 recipes (`bridge/crew/recipes/all-recipes-1.21.11.json`, item tags expanded). The copies of the item it already carries are its own: it makes a new one.
+2. Uses what it carries first: logs become planks and sticks, any wood and any of cobblestone, cobbled deepslate or blackstone work. It uses a crafting table within 6 blocks, or crafts and places one (the 4 planks are counted in the plan) and picks it back up after.
+3. Iron pickaxe: ingots it carries first. With raw iron it smelts only the ingots it lacks, in a furnace within reach or one it crafts from 8 cobblestone and places, with coal, or spare planks, logs or sticks as fuel, and checks the ingots are in the bag before crafting.
+4. Short of something, it asks for the exact amounts ("For the stone pickaxe I need 1 cobblestone more") and keeps the request. Hand it over (drop it by the bot) or let the gatherer bring it: it looks at its bag every second and carries on by itself, no second command.
+5. A fight takes control like it does from any job. When the fight ends it looks at the bag again and carries on. Only one mode runs the bot at a time (the mode manager).
+6. It walks up to you and drops the item at your feet, and counts it given only when the server says you picked it up. Out of reach (more than 48 blocks, or out of sight), it keeps it, says it is ready, and brings it when you come close. A repeated request, a fight or a retry never makes a second copy: asking again while it waits is "already on it", asking again while it holds the item brings that one.
+
+Its priority sits below kill, retreat, guard, eat, give and come, above build and mine. `!stop` ends its jobs (an item it made stays in its bag). `!status` says what it is waiting for.
+
+### The gatherer integration point
+
+The crafter asks the gatherer role through one mode name. Register a mode called `gather` in `makeModes` (`bridge/crew/behaviors.js`, anywhere below eat). When materials are missing the crafter calls
+
+```
+manager.setOn('gather', { items: [{ name: 'cobblestone', count: 1 }], for: 'craft', requester: 'Live_Fonam' })
+```
+
+`items` are the exact missing amounts (item names: `oak_log`, `cobblestone`, `raw_iron`, `diamond`, `coal`). The gather mode gets them and calls `this.finish('done')` (or `this.finish('error')`), which settles the promise `setOn` returned. The crafter then looks at the bag again: done and complete means it carries on; still short means it asks the gatherer once more, then asks the player in chat. Without a `gather` mode it asks the player straight away. The crafter does not wait inside its own mode, so the gather mode has control while it works.
 
 ## News in chat
 
@@ -155,6 +181,8 @@ bridge/crew/skills/food.js       eating and gathering food
 bridge/crew/skills/blueprint.js  the blueprint format, checker, turning and expanding
 bridge/crew/skills/build.js      building: the site check, materials, clearing, placing
 bridge/crew/skills/craft.js      crafting plans and the crafting table
+bridge/crew/skills/crafter_plan.js  the crafter's planner on the 1.21.11 recipes, the craft request parser
+bridge/crew/skills/crafter.js    a craft job: crafting by hand, smelting, handing the item over
 bridge/crew/skills/gather.js     logs, cobblestone, dirt, sand, seeds, saplings, water
 bridge/crew/skills/farm.js       tending a farm, food from the farm
 bridge/crew/skills/explore.js    scouting
@@ -163,6 +191,7 @@ bridge/crew/skills/move.js       walking with a time limit
 bridge/crew/designer.js          new blueprints through Claude Sonnet 5.5
 bridge/crew/blueprints/          the blueprint library
 bridge/crew/tools/village_farm.js  turns a vanilla village farm structure file into a blueprint
+bridge/crew/tools/crafter_live.js  the crafter end to end on a running crew server (CrewTester plays the player)
 bridge/crew/livetest.js          the live tests and the mining benchmark
 bridge/crew/bench.json           the frozen bench world: seed, spot, benchmark kit
 bridge/crew/crew.config.json     owner, bot names, friends, ports, the fighter version
@@ -170,7 +199,9 @@ crew_policy.py                   runs the trained network for the bots
 server-crew/crew-builds.json     what the crew built (not in git, it belongs to the world)
 ```
 
-Tests that need no server: `node --test bridge/crew/test/*.test.js` (63 tests, a fake 1.21.11 world in `test/mockbot.js`).
+Tests that need no server: `node --test bridge/crew/test/*.test.js` (89 tests, a fake 1.21.11 world in `test/mockbot.js`, the crafter's in `test/crafter.test.js`).
+
+The crafter on a real server: start the crew server with nobody on it, then `node bridge/crew/tools/crafter_live.js` (or one scene: demo, six, iron, notable, far, twice). It starts Crew1 obeying CrewTester, logs CrewTester in, sets each scene up over RCON and types the requests in chat. Results go to `runs/crew-tests/crafter_live.json`.
 
 ## Later phases
 

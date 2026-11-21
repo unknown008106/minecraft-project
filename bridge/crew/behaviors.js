@@ -1,10 +1,11 @@
-// The crew's modes, highest priority first: kill, retreat, guard, eat, give, come, build, mine, explore, farm,
+// The crew's modes, highest priority first: kill, retreat, guard, eat, give, come, craft, build, mine, explore, farm,
 // follow, idle. Stop is not a mode, the manager checks it before any of these every tick (modes.js).
 //
 // Every mode belongs to one skill profile, and reaches the game only through that profile's skill:
 //   fight    kill, guard                  the trained network behind fight(bot, target) (skills/fight.js)
 //   survive  retreat, eat                 eating, gathering food and food from its farm (skills/food.js, farm.js)
 //   mine     mine                         scripted mining (skills/mine.js)
+//   craft    craft                        the crafter role: craft requests from chat (skills/crafter.js)
 //   build    build, farm                  blueprints, crafting and farming (skills/build.js, craft.js, farm.js)
 //   move     give, come, explore, follow  pathfinder walks (explore: skills/explore.js)
 // The manager switches profiles as control moves between modes, so any one skill can later be swapped for a
@@ -19,6 +20,8 @@ const { foods, foodPointsCarried, needsFood, eat, gatherFood, ENOUGH_FOOD } = re
 const { buildJob } = require('./skills/build')
 const { farmJob, foodFromFarm, nearestFarm } = require('./skills/farm')
 const { exploreJob } = require('./skills/explore')
+const { runCraftJob, planNow, dropsNear, GIVE_RANGE } = require('./skills/crafter')
+const { LABEL, describeMissing, aOrAn } = require('./skills/crafter_plan')
 
 const KEEP = /(_pickaxe|_axe|_sword|_shovel|_hoe|_helmet|_chestplate|_leggings|_boots)$|^(shield|bow|crossbow|arrow|torch)$/
 const VALUABLE = new Set(['diamond', 'emerald', 'debris', 'netherite', 'ancient_debris', 'gold'])
@@ -407,6 +410,210 @@ function jobHooks (ctx) {
   }
 }
 
+// The crafter role: "craft me a stone pickaxe" (skills/crafter.js does the work, skills/crafter_plan.js the plan).
+// One job at a time, the rest queued. A job's phase:
+//   run        it has control and works (plans, crafts, smelts, walks over to hand it to the player)
+//   waiting    the bag lacks materials: it lets lower modes run (follow) and looks at the bag again every second,
+//              so materials the player hands over, or the gatherer brings, start it again on their own
+//   gathering  the gatherer role (a mode named 'gather', see GATHER below) has the order for the missing materials
+//   holding    made, but the player was out of reach: it keeps it and hands it over when they come close
+// A fight takes control like from any job mode: the run is cancelled at its next await, and when the fight ends the
+// next run looks at the bag again and carries on. job.made means the item exists, so no run crafts a second one.
+//
+// GATHER, the one integration point for the gatherer role. Register a mode named 'gather' in makeModes (anywhere
+// below eat). The crafter turns it on with
+//     manager.setOn('gather', { items: [{ name: 'cobblestone', count: 1 }], for: 'craft', requester })
+// and waits for the promise setOn returns (it settles when the gather mode calls this.finish(result)). Whatever the
+// result, the crafter then looks at the bag again: done means it carries on, still missing means it asks the player.
+// Without a gather mode it asks the player in chat instead.
+const CHECK_MS = 1000
+const HOLD_RETRY_MS = 10000
+
+class CraftMode extends Mode {
+  constructor (ctx) {
+    super('craft')
+    this.profile = 'craft'
+    this.ctx = ctx
+    this.token = null
+    this.job = null
+    this.queue = []
+    this.checkAt = 0
+  }
+
+  // A craft request from chat. The same item for the same player while one is pending is not a second job (a
+  // repeated message or a retry never makes two). Returns 'started', 'queued', 'duplicate' or 'ready' (it was
+  // holding that item, it goes to hand it over now)
+  request ({ item, requester }) {
+    const same = [this.job, ...this.queue].find(j => j && j.item === item && j.requester === requester)
+    if (same) {
+      if (same.phase === 'holding') { same.retryAt = 0; return 'ready' }
+      return 'duplicate'
+    }
+    const job = { item, requester, phase: 'run', made: false, given: false, missing: null, askedFor: null, retryAt: 0, table: null, tableOurs: false, furnace: null }
+    job.done = new Promise(resolve => { job.settle = resolve })
+    if (this.job) { this.queue.push(job); return 'queued' }
+    this.start({ item, requester })  // start() first: it ends any old job, then this one is the job
+    this.job = job
+    return 'started'
+  }
+
+  wants () {
+    const job = this.job
+    if (!job) return false
+    if (this.token) return true
+    if (job.phase === 'run') return true
+    if (job.phase === 'gathering') return false
+    const now = Date.now()
+    if (job.phase === 'holding') {
+      const p = this.ctx.bot.players[job.requester]?.entity
+      if (!p || now < job.retryAt) return false
+      if (p.position.distanceTo(this.ctx.bot.entity.position) > GIVE_RANGE) return false
+      job.phase = 'run'
+      return true
+    }
+    // waiting: the bag again every second (cheap, the planner is pure)
+    if (now < this.checkAt) return false
+    this.checkAt = now + CHECK_MS
+    const bot = this.ctx.bot
+    if (!planNow(bot, job).missing.size || dropsNear(bot, job.missing).length) {
+      job.phase = 'run'
+      return true
+    }
+    return false
+  }
+
+  enter () { this.kick() }
+
+  update () {
+    if (!this.token && this.job && this.job.phase === 'run') this.kick()
+  }
+
+  kick () {
+    const { bot, crew } = this.ctx
+    const job = this.job
+    if (!job || this.token) return
+    const token = { cancelled: false }
+    this.token = token
+    const hooks = {
+      log: crew.log,
+      onMade: () => crew.log(`${bot.username} made ${aOrAn(LABEL[job.item])} for ${job.requester}`),
+      // handing over a pickaxe is not a pickaxe breaking (crew.watchPickaxes counts again from here)
+      onGiving: () => { this.ctx.pickaxes = null },
+      onGiven: () => { this.ctx.pickaxes = null }
+    }
+    // a run a fight cancelled may still be inside its last await (a craft or a toss on its way to the server): the
+    // next run starts only once it has settled, so two runs never craft side by side
+    const prev = this.running || Promise.resolve()
+    const run = prev.catch(() => {}).then(() => {
+      if (token.cancelled) return { result: 'cancelled' }
+      bot.pathfinder.setMovements(crew.noDigMoves(bot))
+      return runCraftJob(bot, job, token, hooks)
+    })
+    this.running = run
+    run.finally(() => { if (this.running === run) this.running = null }).catch(() => {})
+    run.then(r => {
+      if (this.token === token) this.token = null
+      if (token.cancelled || this.job !== job) return
+      this.after(job, r)
+    }).catch(err => {
+      if (this.token === token) this.token = null
+      if (token.cancelled || this.job !== job) return
+      crew.log(`${bot.username} craft ${job.item}: ${err.stack || err.message}`)
+      crew.event(bot, 'key', 'craft-failed', `I couldn't craft the ${LABEL[job.item]}: ${err.message}`.slice(0, 200), 0)
+      this.next(job, 'error', err.message)
+    })
+  }
+
+  after (job, r) {
+    const { bot, crew, manager } = this.ctx
+    const label = LABEL[job.item]
+    if (r.result === 'cancelled') return
+    if (r.result === 'missing') {
+      job.phase = 'waiting'
+      this.checkAt = Date.now() + CHECK_MS
+      const what = describeMissing(r.missing)
+      if (job.askedFor === what) return  // asked for exactly this already
+      job.askedFor = what
+      const items = [...r.missing].map(([name, count]) => ({ name, count }))
+      const them = r.missing.size > 1 || [...r.missing.values()][0] > 1 ? 'them' : 'it'
+      // the gatherer gets two tries per job, then the player is asked
+      job.gathers = job.gathers || 0
+      if (manager.byName.has('gather') && job.gathers < 2) {
+        job.gathers++
+        job.phase = 'gathering'
+        crew.say(bot, `For the ${label} I need ${what}, gathering it`)
+        manager.setOn('gather', { items, for: 'craft', requester: job.requester }).then(res => {
+          if (this.job !== job || job.phase !== 'gathering') return
+          crew.log(`${bot.username} gather for ${label} ended: ${res}`)
+          // run again: it carries on, or says what is still missing (the gatherer again, or the player)
+          job.phase = 'run'
+          job.askedFor = null
+        })
+      } else if (job.gathers) {
+        crew.say(bot, `The gatherer couldn't get it all. For the ${label} I still need ${what}, bring ${them} to me and I'll carry on`)
+      } else {
+        crew.say(bot, `For the ${label} I need ${what} more. Bring ${them} to me and I'll carry on`)
+      }
+      return
+    }
+    if (r.result === 'far') {
+      job.phase = 'holding'
+      job.retryAt = Date.now() + HOLD_RETRY_MS
+      if (!job.saidReady) crew.say(bot, `${job.requester}, your ${label} is ready, I'm keeping it until you're close`)
+      job.saidReady = true
+      return
+    }
+    if (r.result === 'given') {
+      crew.say(bot, `Here's your ${label}, ${job.requester}`)
+      this.next(job, 'done')
+    }
+  }
+
+  // This job is over: the next one in the queue, or the mode turns off
+  next (job, result, error = null) {
+    this.recordJob(job, result, error)
+    job.settle?.(result)
+    if (this.job !== job) return
+    this.job = this.queue.shift() || null
+    if (!this.job) { this.finish(result); return }
+    this.job.phase = 'run'
+    this.ctx.crew.say(this.ctx.bot, `Now the ${LABEL[this.job.item]} for ${this.job.requester}`)
+  }
+
+  recordJob (job, result, error) {
+    const { bot, crew } = this.ctx
+    crew.metric?.({ bot: bot.username, job: 'craft', result, error, params: { item: job.item, requester: job.requester }, stats: job.stats || null })
+  }
+
+  // !stop or another order ends every job, made or not (an item it made stays in its bag)
+  finish (result = 'done') {
+    if (result === 'stopped' || result === 'off' || result === 'replaced') {
+      for (const j of [this.job, ...this.queue]) if (j && j.settle) { this.recordJob(j, result); j.settle(result) }
+      this.job = null
+      this.queue = []
+    }
+    super.finish(result)
+  }
+
+  exit () {
+    if (this.token) this.token.cancelled = true
+    this.token = null
+    const bot = this.ctx.bot
+    bot.pathfinder.setGoal(null)
+    try { if (bot.currentWindow) bot.closeWindow(bot.currentWindow) } catch {}
+  }
+
+  describe () {
+    const j = this.job
+    if (!j) return 'crafting nothing'
+    const label = LABEL[j.item]
+    if (j.phase === 'waiting') return `waiting for ${describeMissing(j.missing || new Map())} to craft ${aOrAn(label)}`
+    if (j.phase === 'gathering') return `gathering ${describeMissing(j.missing || new Map())} for ${aOrAn(label)}`
+    if (j.phase === 'holding') return `holding ${aOrAn(label)} for ${j.requester}`
+    return `crafting ${aOrAn(label)} for ${j.requester}`
+  }
+}
+
 // Builds a blueprint (and !expand, which builds the bigger blueprint over the old one)
 class BuildMode extends JobMode {
   constructor (ctx) { super('build', ctx, 'build') }
@@ -531,6 +738,7 @@ function makeModes (ctx) {
     new EatMode(ctx),
     new GiveMode(ctx),
     new ComeMode(ctx),
+    new CraftMode(ctx),
     new BuildMode(ctx),
     new MineMode(ctx),
     new ExploreMode(ctx),
@@ -546,4 +754,4 @@ function makeModes (ctx) {
   return manager
 }
 
-module.exports = { makeModes, KillMode, GuardMode, RetreatMode, EatMode, MineMode, BuildMode, FarmMode, ExploreMode, FollowMode, ComeMode, GiveMode, IdleMode, KEEP, jobHooks }
+module.exports = { makeModes, CraftMode, KillMode, GuardMode, RetreatMode, EatMode, MineMode, BuildMode, FarmMode, ExploreMode, FollowMode, ComeMode, GiveMode, IdleMode, KEEP, jobHooks }

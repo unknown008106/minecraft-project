@@ -248,4 +248,4 @@ async function pickUpTable (bot, job, token) {
   return true
 }
 
-module.exports = { WOODS, CRAFTABLE, GATHERABLE, INTERACTIVE, planItems, chooseRecipe, describeRecipe, craftAll, ensureTable, pickUpTable, freeSpot, woodOf }
+module.exports = { WOODS, CRAFTABLE, GATHERABLE, INTERACTIVE, planItems, chooseRecipe, describeRecipe, craftAll, ensureTable, pickUpTable, freeSpot, woodOf, resync }
