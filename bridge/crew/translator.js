@@ -35,7 +35,7 @@ function systemPrompt (botNames, blueprints = []) {
     `Bots: ${botNames.join(', ')}. Without a bot name every bot does the command, "!Crew1 mine iron 10" addresses one bot. Build, farm, expand, explore and design go to one bot by themselves.`,
     'Allowed commands, exactly this syntax:',
     ...Object.values(COMMANDS),
-    'A bot runs its commands in order, waiting for each job to end (mine, come, give, kill, build, expand, explore and design end on their own, guard, follow and farm do not, so put them last).',
+    'A bot runs its commands in order, waiting for each job to end (mine, come, give, kill, build, expand, explore, design and craft end on their own, guard, follow and farm do not, so put them last).',
     ...(blueprints.length ? [
       'Blueprints the crew can build, use these names with !build and !expand:',
       ...blueprints.map(b => `  ${b.name}: ${b.description || ''}`),

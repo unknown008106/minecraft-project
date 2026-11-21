@@ -1,6 +1,8 @@
 // The crew's chat commands: reading a chat line, telling commands from plain words, and checking each command.
 // Pure functions with no Minecraft in them, so test/commands.test.js runs without a server.
 
+const { parseCraftRequest, resolveTarget, TARGETS, LABEL } = require('./skills/crafter_plan')
+
 const PREFIX = '!'
 const DEFAULT_KILL_RADIUS = 50
 const DEFAULT_GUARD_RADIUS = 16
@@ -28,10 +30,11 @@ const COMMANDS = {
   expand: '!expand <build>  add one module to a farm or a wall the crew built, for example !expand wheat_farm',
   explore: '!explore [radius]  scout around (default 64), report villages, caves, ores, lava, water and animals with coordinates, then come back',
   design: '!design <name> <description>  have Claude Sonnet draw a new blueprint from words, only for something the library does not have',
-  blueprints: '!blueprints  list the blueprints the crew can build'
+  blueprints: '!blueprints  list the blueprints the crew can build',
+  craft: '!craft <item>  craft a wooden, stone, iron or diamond pickaxe, a furnace or a crafting table and hand it to the player, for example !craft stone pickaxe'
 }
 // Jobs one bot takes when the owner asks the whole crew (two bots on one site would get in each other's way)
-const SOLO = new Set(['build', 'farm', 'expand', 'explore', 'design'])
+const SOLO = new Set(['build', 'farm', 'expand', 'explore', 'design', 'craft'])
 const DEFAULT_EXPLORE_RADIUS = 64
 const FACINGS = ['north', 'east', 'south', 'west']
 const CROPS = { wheat: 'wheat', wheats: 'wheat', carrot: 'carrot', carrots: 'carrot', potato: 'potato', potatoes: 'potato' }
@@ -166,8 +169,13 @@ function parseCommand (words) {
       if (!/^[a-z0-9_]{1,32}$/.test(blueprint)) return { error: `"${rest[0]}" is not a blueprint name (letters, digits and _)` }
       return { name, args: { blueprint, words: rest.slice(1).join(' ').slice(0, 1500) } }
     }
+    case 'craft': {
+      const item = resolveTarget(rest.join(' '))
+      if (!item) return { error: `craft takes one of: ${TARGETS.map(t => LABEL[t]).join(', ')}` }
+      return { name, args: { item } }
+    }
     default:
-      return { error: `unknown command "${head || ''}", try !kill !guard !stop !come !follow !stay !mine !status !give !human !quiet !verbose !build !farm !expand !explore !design !blueprints` }
+      return { error: `unknown command "${head || ''}", try !kill !guard !stop !come !follow !stay !mine !status !give !human !quiet !verbose !build !farm !expand !explore !design !blueprints !craft` }
   }
 }
 
@@ -176,7 +184,15 @@ function parseCommand (words) {
 //   { type: 'translate', targets, text }       "@crew go get me diamonds", "Crew2 come here please"
 //   { type: 'error', targets, error }          a "!" line that is not a valid command
 //   null                                        ordinary chat, ignored
-// targets is 'all' or a list with one bot name (as the bot spells it)
+// "craft me a stone pickaxe" in plain words is a craft command at once, with no translator in between (the crafter's
+// demo line must work without an API key). targets is 'all' or a list with one bot name (as the bot spells it)
+function craftLine (text, targets) {
+  const c = parseCraftRequest(text)
+  if (!c) return null
+  if (c.error) return { type: 'error', targets, error: c.error }
+  return { type: 'command', targets, command: { name: 'craft', args: { item: c.item } } }
+}
+
 function parseMessage (message, botNames) {
   const text = String(message || '').trim()
   const byLower = new Map(botNames.map(n => [n.toLowerCase(), n]))
@@ -195,12 +211,13 @@ function parseMessage (message, botNames) {
     return { type: 'command', targets, command }
   }
   const crew = text.match(/^@crew\b[\s,:]*(.*)$/i)
-  if (crew) return crew[1] ? { type: 'translate', targets: 'all', text: crew[1] } : null
+  if (crew) return crew[1] ? (craftLine(crew[1], 'all') || { type: 'translate', targets: 'all', text: crew[1] }) : null
   const named = text.match(/^@?(\w+)[\s,:]+(.+)$/)
   if (named && byLower.has(named[1].toLowerCase()) && !named[2].trim().startsWith(PREFIX)) {
-    return { type: 'translate', targets: [byLower.get(named[1].toLowerCase())], text: named[2].trim() }
+    const targets = [byLower.get(named[1].toLowerCase())]
+    return craftLine(named[2].trim(), targets) || { type: 'translate', targets, text: named[2].trim() }
   }
-  return null
+  return craftLine(text, 'all')
 }
 
 // A command back to its "!" form, for chat replies and the translator's echo
@@ -228,6 +245,8 @@ function formatCommand (target, command) {
     parts.push(a.radius)
   } else if (command.name === 'design') {
     parts.push(a.blueprint, a.words)
+  } else if (command.name === 'craft') {
+    parts.push(a.item)
   }
   return PREFIX + (target && target !== 'all' ? `${target} ` : '') + parts.join(' ')
 }

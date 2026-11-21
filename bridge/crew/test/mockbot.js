@@ -103,6 +103,7 @@ function makeBot ({ world = null, pos = null, username = 'Crew1', ...worldOpts }
   const chats = []
   const controls = {}
   const items = []  // inventory slots 9 to 44 as Items (no slot numbers needed by the skills)
+  const listeners = {}
 
   const bot = {
     username,
@@ -134,9 +135,10 @@ function makeBot ({ world = null, pos = null, username = 'Crew1', ...worldOpts }
       bot.entity.yaw = Math.atan2(-d.x, -d.z)
       bot.entity.pitch = Math.atan2(d.y, Math.hypot(d.x, d.z))
     },
-    on: () => {},
-    once: () => {},
-    removeListener: () => {}
+    on: (ev, fn) => { (listeners[ev] = listeners[ev] || []).push(fn) },
+    once: (ev, fn) => { const w = (...a) => { bot.removeListener(ev, w); fn(...a) }; bot.on(ev, w) },
+    removeListener: (ev, fn) => { listeners[ev] = (listeners[ev] || []).filter(f => f !== fn) },
+    emit: (ev, ...a) => { for (const fn of (listeners[ev] || []).slice()) fn(...a) }
   }
 
   // the inventory
@@ -357,6 +359,76 @@ function makeBot ({ world = null, pos = null, username = 'Crew1', ...worldOpts }
     world.set(pos, 'chest', { facing: 'north', type: 'single', waterlogged: false })
     const inside = world.containers.get(key(pos))
     for (const [name, count] of list) inside.push(new Item(registry.itemsByName[name].id, count))
+  }
+
+  // dropping items: tossed records what went where (the crafter hands items over this way)
+  bot.tossed = []
+  bot.toss = async (type, meta, count) => {
+    const name = registry.items[type].name
+    const n = bot.take(name, count)
+    if (n < count) throw new Error(`not enough ${name} to toss`)
+    bot.tossed.push({ name, count: n, pos: bot.entity.position.clone(), yaw: bot.entity.yaw })
+    // a player standing close picks it up (the server's playerCollect)
+    const near = Object.values(bot.players).map(p => p.entity).find(e => e && e.position.distanceTo(bot.entity.position) <= 3.5)
+    if (near) setTimeout(() => bot.emit('playerCollect', near, { name: 'item' }), 10)
+  }
+  bot.currentWindow = null
+  bot.closeWindow = () => { bot.currentWindow = null }
+
+  // furnaces: smelting is instant (each fuel item burns its vanilla number of items), Mineflayer's Furnace methods
+  const FUEL = { coal: 8, charcoal: 8, coal_block: 80, blaze_rod: 12, stick: 0.5 }
+  const burnOf = name => FUEL[name] ?? (/_planks$|_log$/.test(name) ? 1.5 : 0)
+  const SMELTS = { raw_iron: 'iron_ingot', raw_gold: 'gold_ingot', raw_copper: 'copper_ingot', cobblestone: 'stone', sand: 'glass' }
+  world.furnaces = new Map()
+  bot.openFurnace = async (block) => {
+    const k = key(block.position)
+    if (world.get(block.position).name !== 'furnace') throw new Error('not a furnace')
+    if (!world.furnaces.has(k)) world.furnaces.set(k, { input: null, fuel: null, output: null, burn: 0, opens: 0 })
+    const s = world.furnaces.get(k)
+    s.opens++
+    const run = () => {
+      while (s.input && s.input.count > 0) {
+        if (s.burn < 1 && s.fuel && s.fuel.count > 0) {
+          s.burn += burnOf(s.fuel.name)
+          s.fuel.count--
+          if (!s.fuel.count) s.fuel = null
+        }
+        if (s.burn < 1) break
+        s.burn -= 1
+        s.input.count--
+        const out = SMELTS[s.input.name]
+        if (!s.input.count) s.input = null
+        if (!s.output) s.output = new Item(registry.itemsByName[out].id, 0)
+        s.output.count++
+      }
+    }
+    const put = (slot, type, count) => {
+      const name = registry.items[type].name
+      if (s[slot] && s[slot].name !== name) throw new Error(`the ${slot} slot holds ${s[slot].name}`)
+      const n = bot.take(name, count)
+      if (n < count) throw new Error(`not enough ${name}`)
+      if (!s[slot]) s[slot] = new Item(type, 0)
+      s[slot].count += n
+      run()
+    }
+    const takeSlot = slot => {
+      const it = s[slot]
+      if (!it) return null
+      s[slot] = null
+      bot.give(it.name, it.count)
+      return it
+    }
+    return {
+      inputItem: () => s.input,
+      fuelItem: () => s.fuel,
+      outputItem: () => s.output,
+      putInput: async (type, meta, count) => put('input', type, count),
+      putFuel: async (type, meta, count) => put('fuel', type, count),
+      takeInput: async () => takeSlot('input'),
+      takeFuel: async () => takeSlot('fuel'),
+      takeOutput: async () => takeSlot('output'),
+      close: () => {}
+    }
   }
 
   // crafting with the real 1.21.11 recipes, same rules as Mineflayer's recipesFor
