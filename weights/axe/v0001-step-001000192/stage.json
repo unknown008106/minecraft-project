@@ -1,0 +1,17 @@
+{
+  "mode": "scripted",
+  "level": 0,
+  "strategy": "L1",
+  "seed": 1,
+  "skills": true,
+  "fair_health": true,
+  "extra_weights": {
+    "engage": -0.01,
+    "chaser_timeout": -8.0,
+    "chaser_dealt": 0.5,
+    "mob_ranged_dealt": 0.5,
+    "mob_space_dealt": 0.5
+  },
+  "kind_inputs": true,
+  "chaser_mix": 0.3
+}
